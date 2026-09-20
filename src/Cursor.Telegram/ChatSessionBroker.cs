@@ -1,0 +1,127 @@
+using Cursor.Agent;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Cursor.Telegram;
+
+public sealed class ChatSessionBroker
+{
+    private readonly ICursorAgentHost _host;
+    private readonly CursorAgentOptions _options;
+    private readonly ILogger<ChatSessionBroker> _logger;
+    private readonly SemaphoreSlim _mutex = new(1, 1);
+    private ICursorAgentSession? _session;
+    private CancellationTokenSource? _promptCts;
+
+    public ChatSessionBroker(
+        ICursorAgentHost host,
+        IOptions<CursorAgentOptions> options,
+        ILogger<ChatSessionBroker> logger)
+    {
+        _host = host;
+        _options = options.Value;
+        _logger = logger;
+    }
+
+    public string RepoPath => _options.RepoPath;
+
+    public AgentSessionStatus Status()
+    {
+        var session = _session;
+        return new AgentSessionStatus(
+            session?.SessionId,
+            session?.WorkingDirectory ?? _options.RepoPath,
+            session?.Activity ?? AgentActivity.Idle,
+            session is not null);
+    }
+
+    public bool IsBusy => _mutex.CurrentCount == 0;
+
+    public async Task<PromptResult> PromptAsync(string text, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return PromptResult.Fail("Пустой промпт.");
+        }
+
+        if (!await _mutex.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        {
+            return PromptResult.WasBusy();
+        }
+
+        var promptCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _promptCts = promptCts;
+        try
+        {
+            var session = await EnsureSessionAsync(promptCts.Token).ConfigureAwait(false);
+            return await session.PromptAsync(text, progress: null, promptCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return PromptResult.WasCancelled();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Prompt failed");
+            await DropSessionAsync().ConfigureAwait(false);
+            return PromptResult.Fail(ex.Message);
+        }
+        finally
+        {
+            promptCts.Dispose();
+            if (ReferenceEquals(_promptCts, promptCts))
+            {
+                _promptCts = null;
+            }
+
+            _mutex.Release();
+        }
+    }
+
+    public async Task CancelAsync(CancellationToken cancellationToken)
+    {
+        _promptCts?.Cancel();
+        var session = _session;
+        if (session is not null)
+        {
+            await session.CancelAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public async Task ResetAsync()
+    {
+        _promptCts?.Cancel();
+        await DropSessionAsync().ConfigureAwait(false);
+    }
+
+    private async Task<ICursorAgentSession> EnsureSessionAsync(CancellationToken cancellationToken)
+    {
+        if (_session is { Activity: not AgentActivity.Faulted } existing)
+        {
+            return existing;
+        }
+
+        await DropSessionAsync().ConfigureAwait(false);
+        _session = await _host.CreateSessionAsync(_options.RepoPath, cancellationToken).ConfigureAwait(false);
+        return _session;
+    }
+
+    private async Task DropSessionAsync()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _session.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to dispose ACP session");
+        }
+
+        _session = null;
+    }
+}
