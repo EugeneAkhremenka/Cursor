@@ -1,297 +1,254 @@
-# Cursor Telegram — локальный деплой с нуля
+# Cursor Telegram — деплой на Windows
 
-Бот в Telegram управляет **локальным** Cursor CLI (`agent acp`) на этой же машине. Правки и терминал идут в твой checkout. Cloud Agents API не используется. Модель Cursor всё равно hosted.
+Бот в Telegram управляет **локальным** Cursor CLI (`agent acp`) на этом ПК. Правки и терминал идут в твой checkout. Cloud Agents API не используется. Модель Cursor всё равно hosted.
 
 ```
 Телефон / Telegram
-    → этот .NET worker (polling, без открытых портов)
-        → процесс `agent acp`
+    → этот .NET worker (polling, входящие порты не нужны)
+        → agent.cmd acp
             → файлы в выбранном репозитории
 ```
 
-Машина должна быть включена, с сетью и с живым процессом worker. Спящий ноут = мёртвый бот.
+ПК должен быть **включён, не спать, с интернетом**, worker запущен. Спящий Windows = мёртвый бот.
+
+Все команды ниже — в **PowerShell**. Пути — Windows, например `C:\src\app`.
 
 ---
 
 ## 0. Что заранее иметь
 
-- Linux, macOS или Windows (ниже примеры для Linux/macOS; Windows — те же шаги в PowerShell)
-- Аккаунт Cursor с платным планом (нужен API key / агент)
-- Telegram-аккаунт
-- Хотя бы один git-репозиторий уже склонированный на диск
+- Windows 10/11
+- Аккаунт Cursor с платным планом
+- Telegram
+- Git for Windows (`git` в PATH) — нужен для `/diff`
+- Хотя бы один репозиторий уже склонированный на диск
 
 ---
 
 ## 1. Поставить .NET 8 SDK
 
-Проверка:
+В PowerShell:
 
-```bash
+```powershell
 dotnet --version
 ```
 
 Нужна линейка **8.x**. Если команды нет:
 
-```bash
-# Linux / macOS
-curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel 8.0
-export DOTNET_ROOT="$HOME/.dotnet"
-export PATH="$HOME/.dotnet:$PATH"
+```powershell
+winget install Microsoft.DotNet.SDK.8
 ```
 
-Windows: [скачать SDK 8](https://dotnet.microsoft.com/download/dotnet/8.0) или `winget install Microsoft.DotNet.SDK.8`.
+Или установщик: [dotnet.microsoft.com/download/dotnet/8.0](https://dotnet.microsoft.com/download/dotnet/8.0)
+
+**Закрой и заново открой PowerShell**, снова `dotnet --version`.
 
 ---
 
-## 2. Поставить Cursor CLI и проверить агента
+## 2. Поставить Cursor CLI
 
-```bash
-# Linux / macOS / WSL
-curl https://cursor.com/install -fsS | bash
+```powershell
+irm 'https://cursor.com/install?win32=true' | iex
 ```
 
-Windows (PowerShell): `irm 'https://cursor.com/install?win32=true' | iex`
+Клиент обычно ставится сюда (часто **не** в PATH):
 
-Проверка бинарника (часто лежит в `~/.local/bin/agent`):
-
-```bash
-agent --version
+```
+C:\Users\<ты>\AppData\Local\cursor-agent\agent.cmd
 ```
 
-Если `command not found`:
+Проверка:
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-# и добавь эту строку в ~/.bashrc или ~/.zshrc
+```powershell
+& "$env:LOCALAPPDATA\cursor-agent\agent.cmd" --version
+```
+
+Если файл не найден — поищи:
+
+```powershell
+Get-ChildItem "$env:LOCALAPPDATA\cursor-agent" -Recurse -Filter agent.cmd | Select-Object FullName
 ```
 
 Ключ API:
 
-1. Открой [cursor.com/dashboard/api](https://cursor.com/dashboard/api)
-2. Создай **User API Key**
-3. Скопируй **полный** секрет сразу из диалога (в таблице потом только маска)
+1. [cursor.com/dashboard/api](https://cursor.com/dashboard/api)
+2. **User API Key** → копируй **полный** секрет из диалога создания (не маску из таблицы)
 
-Проверка, что CLI вообще работает в репозитории:
+Проверка агента **в репозитории**, до бота:
 
-```bash
-export CURSOR_API_KEY="вставь_полный_ключ"
-cd /absolute/path/to/your/repo
-agent -p --force "Reply with one short sentence: hello from CLI"
+```powershell
+$env:CURSOR_API_KEY = "crsr_вставь_полный_ключ"
+cd C:\src\your-repo
+& "$env:LOCALAPPDATA\cursor-agent\agent.cmd" -p --force "Reply with one short sentence: hello from CLI"
 ```
 
-Должен прийти текст. Если здесь ошибка — бот тоже не заведётся. Почини CLI до шага 6.
-
-Альтернатива ключу: `agent login` в браузере. Для сервиса удобнее `CURSOR_API_KEY`.
+Должен прийти текст. Если нет — бот тоже не заведётся.
 
 ---
 
 ## 3. Создать Telegram-бота
 
-1. В Telegram открой [@BotFather](https://t.me/BotFather)
-2. `/newbot` → имя и username
-3. Скопируй токен вида `123456789:AAH...` — это `Telegram:BotToken`
-4. Напиши своему боту `/start` (пока он не ответит — это нормально)
+1. [@BotFather](https://t.me/BotFather) → `/newbot` → токен `123456789:AAH...`
+2. Напиши боту `/start` (пока молчит — нормально)
+3. [@userinfobot](https://t.me/userinfobot) → свой **числовой** id, например `847123456`
 
-Свой numeric **user id** (не username):
-
-1. Напиши [@userinfobot](https://t.me/userinfobot)
-2. Скопируй число вроде `847123456` — это `Telegram:AllowedUserIds`
-
-Без этого id worker не стартует. Чужие аккаунты бот игнорирует.
-
-Не добавляй бота в группы на первом запуске.
+Без numeric id worker не стартует. В группы на первом запуске не добавляй.
 
 ---
 
 ## 4. Склонировать этот проект
 
-```bash
+```powershell
+cd C:\src
 git clone https://github.com/EugeneAkhremenka/Cursor.git
 cd Cursor
-# если ставишь с ветки PR:
-# git checkout cursor/dotnet-telegram-acp-8269
-```
-
-Сборка (проверка, что SDK видит проект):
-
-```bash
+git checkout cursor/dotnet-telegram-acp-8269
 dotnet test
 ```
 
-Тесты не требуют Telegram и `agent`. Должно быть 25 passed.
+Тесты не требуют Telegram. Ожидай 25+ passed.
 
 ---
 
-## 5. Прописать секреты (не в git)
+## 5. Секреты (не в git)
 
-Самый простой путь — **user-secrets** (файл только у тебя на машине).
+User-secrets лежат только в твоём профиле Windows.
 
-```bash
-cd /path/to/Cursor
+```powershell
+cd C:\src\Cursor
 
-dotnet user-secrets set Telegram:BotToken "123456789:AAH..." --project src/Cursor.TelegramHost
-dotnet user-secrets set Telegram:AllowedUserIds:0 "847123456" --project src/Cursor.TelegramHost
-dotnet user-secrets set Cursor:ApiKey "crsr_..." --project src/Cursor.TelegramHost
-dotnet user-secrets set Cursor:RepoPath "/absolute/path/to/your/repo" --project src/Cursor.TelegramHost
+dotnet user-secrets set Telegram:BotToken "123456789:AAH..." --project src\Cursor.TelegramHost
+dotnet user-secrets set Telegram:AllowedUserIds:0 "847123456" --project src\Cursor.TelegramHost
+dotnet user-secrets set Cursor:ApiKey "crsr_..." --project src\Cursor.TelegramHost
+dotnet user-secrets set Cursor:RepoPath "C:\src\your-repo" --project src\Cursor.TelegramHost
+dotnet user-secrets set Cursor:AgentPath "$env:LOCALAPPDATA\cursor-agent\agent.cmd" --project src\Cursor.TelegramHost
 ```
-
-`RepoPath` — **абсолютный** путь к checkout, с которым агент стартует. Относительный `~/proj` в env лучше не использовать; в user-secrets `~` развернётся при `/repo`, но для старта надёжнее полный путь.
 
 Несколько репо по имени (необязательно):
 
-```bash
-dotnet user-secrets set Cursor:Repos:app "/absolute/path/to/app" --project src/Cursor.TelegramHost
-dotnet user-secrets set Cursor:Repos:infra "/absolute/path/to/infra" --project src/Cursor.TelegramHost
-```
-
-Потом в чате: `/repo infra`.
-
-### Вариант: переменные окружения
-
-Имена с **двойным** подчёркиванием — так .NET биндит конфиг.
-
-```bash
-export Telegram__BotToken="123456789:AAH..."
-export Telegram__AllowedUserIds__0="847123456"
-export Cursor__ApiKey="crsr_..."
-export Cursor__RepoPath="/absolute/path/to/your/repo"
-export Cursor__Repos__app="/absolute/path/to/app"
-```
-
-Windows PowerShell:
-
 ```powershell
-$env:Telegram__BotToken="123456789:AAH..."
-$env:Telegram__AllowedUserIds__0="847123456"
-$env:Cursor__ApiKey="crsr_..."
-$env:Cursor__RepoPath="C:\src\your-repo"
+dotnet user-secrets set Cursor:Repos:app "C:\src\app" --project src\Cursor.TelegramHost
+dotnet user-secrets set Cursor:Repos:infra "C:\src\infra" --project src\Cursor.TelegramHost
 ```
 
-Не клади токены в `appsettings.json` и не коммить их.
+В чате потом: `/repo infra`.
+
+`RepoPath` и пути в `Repos` — **абсолютные** `C:\...`, не `~\proj`.
 
 ---
 
 ## 6. Запустить worker
 
-Из корня репозитория **Cursor** (не из целевого git-проекта):
+Из папки `C:\src\Cursor` (это этот репозиторий бота, не целевой проект):
 
-```bash
-dotnet run --project src/Cursor.TelegramHost
+```powershell
+cd C:\src\Cursor
+dotnet run --project src\Cursor.TelegramHost
 ```
 
-Успешный старт в логе:
+В логе:
 
 ```
 Telegram polling started for 1 allowed user(s)
 ```
 
-Если сразу падает:
+Окно PowerShell **не закрывай**. Ctrl+C — стоп.
 
-| Сообщение | Что сделать |
+| Ошибка | Что сделать |
 |---|---|
 | `Telegram:BotToken is required` | шаг 5, токен BotFather |
-| `Telegram:AllowedUserIds must contain at least one` | шаг 3–5, numeric id |
-| `Could not start Cursor CLI` | шаг 2, `agent` в PATH или `Cursor:AgentPath` |
-| `Repo path does not exist` | абсолютный `Cursor:RepoPath` |
-
-Оставь терминал открытым. Ctrl+C — стоп.
+| `AllowedUserIds must contain at least one` | шаг 3–5, числовой id |
+| `Could not start Cursor CLI` | шаг 2, явный `Cursor:AgentPath` на `agent.cmd` |
+| `Repo path does not exist` | `C:\src\...`, не Linux-путь |
 
 ---
 
 ## 7. Проверить в Telegram
 
-Напиши **своему** боту (тому, чей токен в конфиге):
+Пиши **своему** боту с того аккаунта, чей id в allowlist:
 
 1. `/start` — справка
-2. `/status` — `cwd` должен быть твой `RepoPath`
-3. `/repo` — список (default + имена из `Repos`)
-4. Любой текст, например: `Напиши в чат одну строку: бот живой`  
-   Должен прийти ответ агента. В логе worker появится `ACP session ... started`
-5. `/diff` — `git status` этого checkout
-6. Если настроен `Repos:infra`: `/repo infra`, потом `/status`
+2. `/status` — `cwd` = `C:\src\your-repo`
+3. Текст: `Напиши одну строку: бот живой`
+4. `/diff`
+5. Если задан `Repos:infra`: `/repo infra`, снова `/status`
 
-Если тишина — ты пишешь не с того Telegram-аккаунта (id не в allowlist). Worker в логе напишет `Ignored Telegram user ...`.
+Тишина → не тот Telegram-аккаунт. В логе: `Ignored Telegram user`.
 
 ---
 
-## 8. Команды бота
+## 8. Команды
 
 | Команда | Действие |
 |---|---|
 | `/start` | справка |
 | текст или `/task …` | промпт текущей сессии |
-| `/new` | сбросить ACP-сессию, тот же репо |
-| `/status` | cwd / session / activity |
-| `/cancel` | остановить текущий run |
+| `/new` | сбросить сессию, тот же репо |
+| `/status` | cwd / session |
+| `/cancel` | стоп текущего run |
 | `/repo` | текущий checkout и список |
-| `/repo <имя или путь>` | сменить репо, сессия сбросится |
-| `/diff` | `git status --short` и `git diff --stat` |
+| `/repo <имя или путь>` | сменить репо |
+| `/diff` | `git status` + `git diff --stat` |
 
-Пока агент работает, второй промпт получит «занято». Сначала `/cancel`.
-
-`PermissionMode` по умолчанию `allow-always`: агент сам выполняет shell и правки файлов, без кнопок в чате.
+Пока агент работает — «занято», сначала `/cancel`. Инструменты по умолчанию `allow-always` (как удалённый shell).
 
 ---
 
-## 9. Чтобы жило после закрытия терминала
+## 9. Чтобы жило без открытого окна
 
-### Linux (systemd user)
+ПК не должен уходить в сон (Параметры → Система → Питание → экран/сон, или `powercfg /change standby-timeout-ac 0` от админа).
 
-`~/.config/systemd/user/cursor-telegram.service`:
+Простой автозапуск после логина — ярлык в автозагрузку.
 
-```ini
-[Unit]
-Description=Cursor Telegram local ACP bot
+1. Собери:
 
-[Service]
-WorkingDirectory=%h/src/Cursor
-ExecStart=%h/.dotnet/dotnet run --project src/Cursor.TelegramHost --no-launch-profile
-Restart=on-failure
-RestartSec=5
-Environment=DOTNET_ROOT=%h/.dotnet
-Environment=PATH=%h/.dotnet:%h/.local/bin:/usr/bin
-
-[Install]
-WantedBy=default.target
+```powershell
+cd C:\src\Cursor
+dotnet publish src\Cursor.TelegramHost -c Release -o C:\src\cursor-telegram-host
 ```
 
-Подставь свой `WorkingDirectory`. Секреты удобнее оставить в user-secrets (они читаются при `dotnet run` из того же проекта) **или** добавить `Environment=Telegram__BotToken=...` в unit (файл будет содержать секреты — права `600`).
+2. Файл `C:\src\cursor-telegram-host\run.cmd`:
 
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now cursor-telegram.service
-journalctl --user -u cursor-telegram.service -f
+```bat
+@echo off
+cd /d C:\src\cursor-telegram-host
+dotnet Cursor.TelegramHost.dll
 ```
 
-Чтобы работало после logout: `loginctl enable-linger $USER`.
+Секреты user-secrets привязаны к проекту `Cursor.TelegramHost`. Для `publish` они **не подхватываются**. Либо оставь `dotnet run` из исходников, либо задай переменные в `run.cmd`:
 
-Прод-вариант без `dotnet run`: `dotnet publish src/Cursor.TelegramHost -c Release -o $HOME/opt/cursor-telegram` и `ExecStart=/usr/bin/dotnet $HOME/opt/cursor-telegram/Cursor.TelegramHost.dll`.
-
-### macOS
-
-`launchd` или просто `tmux` / `screen`:
-
-```bash
-tmux new -s cursor-bot
-cd ~/src/Cursor
-dotnet run --project src/Cursor.TelegramHost
-# Ctrl+B, D — отсоединиться
+```bat
+@echo off
+cd /d C:\src\cursor-telegram-host
+set Telegram__BotToken=123:AAH...
+set Telegram__AllowedUserIds__0=847123456
+set Cursor__ApiKey=crsr_...
+set Cursor__RepoPath=C:\src\your-repo
+set Cursor__AgentPath=%LOCALAPPDATA%\cursor-agent\agent.cmd
+dotnet Cursor.TelegramHost.dll
 ```
 
-Не давай Mac уснуть, если бот должен отвечать с телефона.
+Права на файл — только ты.
+
+3. Win+R → `shell:startup` → ярлык на `run.cmd`.
+
+Или Планировщик заданий: при входе в систему, от твоего пользователя, действие = `run.cmd`.
+
+Windows Service тут хуже: нет интерактивного профиля, git creds и `%LOCALAPPDATA%` легко отваливаются.
 
 ---
 
-## 10. Частые поломки
+## 10. Частые поломки на Windows
 
-- **Бот молчит, в логе Ignored Telegram user** — в allowlist не тот id. Свой id с @userinfobot, индекс `AllowedUserIds:0`.
-- **CLI не находится** — `which agent`; иначе `dotnet user-secrets set Cursor:AgentPath "$HOME/.local/bin/agent" --project src/Cursor.TelegramHost`
-- **Invalid User API Key** — скопирован обрезанный ключ из таблицы, не из диалога создания. Создай ключ заново.
-- **ACP handshake timeout** — нет сети до Cursor, неверный ключ, или `agent acp` не стартует. Снова шаг 2.
-- **Правки не там** — `/status` и `/repo`. Агент работает в cwd сессии, не в папке, откуда запущен worker.
+- **agent не в PATH** — всегда ставь `Cursor:AgentPath` на `...\cursor-agent\agent.cmd`
+- **Invalid User API Key** — скопирована маска из таблицы, не полный ключ
+- **`/diff` не работает** — нет Git for Windows, или `git` не в PATH того же пользователя
+- **Execution Policy** на `irm \| iex` — открой PowerShell и выполни установщик ещё раз; при блоке: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+- **Сон / быстрый запуск** — бот перестаёт поллить Telegram
+- **Антивирус** режет `agent.cmd` child process — исключение на `%LOCALAPPDATA%\cursor-agent` и папку worker
 
 ---
 
 ## Важно
 
-Это удалённый shell с полным доступом агента к диску в рамках checkout (и `/repo /любой/путь`, если каталог существует). Только свой Telegram id, только своя машина, ключи не в git. Код модели уходит в облако Cursor; локально остаются файлы и команды.
+Это удалённый shell. Только свой Telegram id, ключи не в git. `/repo C:\...` даёт агенту этот каталог. Код модели уходит в облако Cursor; локально остаются файлы и команды.

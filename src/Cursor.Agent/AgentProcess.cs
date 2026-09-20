@@ -22,16 +22,17 @@ internal static class AgentProcess
             return Path.GetFullPath(agentPath);
         }
 
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var localBin = Path.Combine(home, ".local", "bin", agentPath);
-        if (File.Exists(localBin))
+        foreach (var candidate in WellKnownPaths(agentPath))
         {
-            return localBin;
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
         }
 
         var path = Environment.GetEnvironmentVariable("PATH") ?? "";
         var extensions = OperatingSystem.IsWindows()
-            ? new[] { "", ".cmd", ".exe" }
+            ? new[] { "", ".cmd", ".exe", ".bat" }
             : new[] { "" };
         foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
@@ -48,12 +49,51 @@ internal static class AgentProcess
         return agentPath;
     }
 
+    public static IEnumerable<string> WellKnownPaths(string agentPath)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        yield return Path.Combine(home, ".local", "bin", agentPath);
+
+        var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrEmpty(localApp))
+        {
+            yield break;
+        }
+
+        var cursorAgent = Path.Combine(localApp, "cursor-agent");
+        yield return Path.Combine(cursorAgent, "agent.cmd");
+        yield return Path.Combine(cursorAgent, "agent.exe");
+        yield return Path.Combine(cursorAgent, "cursor-agent.cmd");
+        yield return Path.Combine(cursorAgent, "cursor-agent.exe");
+        yield return Path.Combine(cursorAgent, agentPath);
+        yield return Path.Combine(cursorAgent, agentPath + ".cmd");
+        yield return Path.Combine(cursorAgent, agentPath + ".exe");
+    }
+
     public static Process Start(string agentPath, string workingDirectory, string apiKey, ILogger logger)
+    {
+        var start = CreateStartInfo(agentPath, workingDirectory, apiKey);
+        Process process;
+        try
+        {
+            process = Process.Start(start) ?? throw new InvalidOperationException($"Failed to start {agentPath}");
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Could not start Cursor CLI '{agentPath}'. On Windows: irm 'https://cursor.com/install?win32=true' | iex, then set Cursor:AgentPath to %LOCALAPPDATA%\\cursor-agent\\agent.cmd",
+                ex);
+        }
+
+        _ = PumpStderrAsync(process, logger);
+        return process;
+    }
+
+    internal static ProcessStartInfo CreateStartInfo(string agentPath, string workingDirectory, string apiKey)
     {
         var utf8 = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         var start = new ProcessStartInfo
         {
-            FileName = agentPath,
             WorkingDirectory = workingDirectory,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -64,26 +104,31 @@ internal static class AgentProcess
             StandardOutputEncoding = utf8,
             StandardErrorEncoding = utf8
         };
-        start.ArgumentList.Add("acp");
+
+        if (NeedsCmdWrapper(agentPath))
+        {
+            start.FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
+            start.Arguments = "/d /s /c \"" + agentPath.Replace("\"", "") + "\" acp";
+        }
+        else
+        {
+            start.FileName = agentPath;
+            start.ArgumentList.Add("acp");
+        }
+
         if (!string.IsNullOrWhiteSpace(apiKey))
         {
             start.Environment["CURSOR_API_KEY"] = apiKey;
         }
 
-        Process process;
-        try
-        {
-            process = Process.Start(start) ?? throw new InvalidOperationException($"Failed to start {agentPath}");
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"Could not start Cursor CLI '{agentPath}'. Install it with curl https://cursor.com/install -fsS | bash",
-                ex);
-        }
+        return start;
+    }
 
-        _ = PumpStderrAsync(process, logger);
-        return process;
+    internal static bool NeedsCmdWrapper(string agentPath)
+    {
+        var ext = Path.GetExtension(agentPath);
+        return ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".bat", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task PumpStderrAsync(Process process, ILogger logger)
