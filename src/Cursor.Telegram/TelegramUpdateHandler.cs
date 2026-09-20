@@ -36,7 +36,13 @@ public sealed class TelegramUpdateHandler
         var userId = message.From?.Id;
         if (userId is null || !IsAllowed(userId.Value))
         {
-            _logger.LogInformation("Ignored Telegram user {UserId}", userId);
+            _logger.LogInformation("Denied Telegram user {UserId}", userId);
+            if (userId is not null)
+            {
+                await ReplyAsync(message.Chat.Id, TelegramText.AccessDenied(), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             return;
         }
 
@@ -135,7 +141,10 @@ public sealed class TelegramUpdateHandler
     private async Task RunPromptAsync(long chatId, string prompt, CancellationToken cancellationToken)
     {
         await _bot.SendChatAction(chatId, ChatAction.Typing, cancellationToken: cancellationToken).ConfigureAwait(false);
-        var result = await _broker.PromptAsync(prompt, cancellationToken).ConfigureAwait(false);
+        await using var live = new TelegramActivityPublisher(_bot, chatId, cancellationToken);
+        await live.StartAsync().ConfigureAwait(false);
+        var result = await _broker.PromptAsync(prompt, live, cancellationToken).ConfigureAwait(false);
+        await live.FinishAsync(result).ConfigureAwait(false);
         var envelope = new PromptResultEnvelope(
             result.Success,
             result.Text,

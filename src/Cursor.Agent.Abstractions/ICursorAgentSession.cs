@@ -10,7 +10,7 @@ public interface ICursorAgentSession : IAsyncDisposable
 
     Task<PromptResult> PromptAsync(
         string text,
-        IProgress<string>? progress,
+        IProgress<AgentActivityEvent>? progress,
         CancellationToken cancellationToken);
 
     Task CancelAsync(CancellationToken cancellationToken);

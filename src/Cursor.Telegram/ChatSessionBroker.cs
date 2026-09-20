@@ -48,7 +48,13 @@ public sealed class ChatSessionBroker
 
     public bool IsBusy => _mutex.CurrentCount == 0;
 
-    public async Task<PromptResult> PromptAsync(string text, CancellationToken cancellationToken)
+    public Task<PromptResult> PromptAsync(string text, CancellationToken cancellationToken) =>
+        PromptAsync(text, progress: null, cancellationToken);
+
+    public async Task<PromptResult> PromptAsync(
+        string text,
+        IProgress<AgentActivityEvent>? progress,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -65,7 +71,7 @@ public sealed class ChatSessionBroker
         try
         {
             var session = await EnsureSessionAsync(promptCts.Token).ConfigureAwait(false);
-            return await session.PromptAsync(text, progress: null, promptCts.Token).ConfigureAwait(false);
+            return await session.PromptAsync(text, progress, promptCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

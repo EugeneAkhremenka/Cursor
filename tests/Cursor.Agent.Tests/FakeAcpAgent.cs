@@ -54,6 +54,47 @@ internal sealed class FakeAcpAgent : IAsyncDisposable
                         sessionId,
                         update = new
                         {
+                            sessionUpdate = "agent_thought_chunk",
+                            content = new { type = "text", text = "thinking about it" }
+                        }
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                await _rpc.NotifyAsync(
+                    "session/update",
+                    new
+                    {
+                        sessionId,
+                        update = new
+                        {
+                            sessionUpdate = "tool_call",
+                            toolCallId = "t-read",
+                            name = "read",
+                            title = "Reading file",
+                            status = "in_progress",
+                            locations = new[] { new { path = "/tmp/repo/README.md" } }
+                        }
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                await _rpc.NotifyAsync(
+                    "session/update",
+                    new
+                    {
+                        sessionId,
+                        update = new
+                        {
+                            sessionUpdate = "tool_call_update",
+                            toolCallId = "t-read",
+                            status = "completed"
+                        }
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                await _rpc.NotifyAsync(
+                    "session/update",
+                    new
+                    {
+                        sessionId,
+                        update = new
+                        {
                             sessionUpdate = "agent_message_chunk",
                             content = new { type = "text", text = $"echo:{text}" }
                         }

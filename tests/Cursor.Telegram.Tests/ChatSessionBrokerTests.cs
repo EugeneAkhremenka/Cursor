@@ -130,7 +130,7 @@ public sealed class ChatSessionBrokerTests
 
         public async Task<PromptResult> PromptAsync(
             string text,
-            IProgress<string>? progress,
+            IProgress<AgentActivityEvent>? progress,
             CancellationToken cancellationToken)
         {
             Activity = AgentActivity.Running;

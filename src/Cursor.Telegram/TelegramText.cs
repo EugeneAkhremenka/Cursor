@@ -7,6 +7,8 @@ public static class TelegramText
 {
     public const int MaxMessageLength = 4000;
 
+    public static string AccessDenied() => "Access denied.";
+
     public static string Help() =>
         """
         Локальный Cursor-агент (ACP), без Cloud Agents.
@@ -21,6 +23,7 @@ public static class TelegramText
         /diff — git status и diff --stat
 
         Обычное текстовое сообщение тоже уходит агенту как промпт.
+        Пока агент работает, бот обновляет статус: thinking и вызовы тулов.
         """;
 
     public static string Escape(string text) => WebUtility.HtmlEncode(text);

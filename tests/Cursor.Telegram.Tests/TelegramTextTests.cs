@@ -21,6 +21,12 @@ public sealed class TelegramTextTests
     }
 
     [Fact]
+    public void AccessDenied_IsExplicit()
+    {
+        Assert.Equal("Access denied.", TelegramText.AccessDenied());
+    }
+
+    [Fact]
     public void FormatPromptResult_Busy()
     {
         var text = TelegramText.FormatPromptResult(new PromptResultEnvelope(false, "", null, false, true));

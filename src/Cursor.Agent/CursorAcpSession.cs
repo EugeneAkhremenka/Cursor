@@ -11,6 +11,7 @@ internal sealed class CursorAcpSession : ICursorAgentSession
     private readonly IAsyncDisposable? _lifetime;
     private readonly object _gate = new();
     private CancellationTokenSource? _promptCts;
+    private IProgress<AgentActivityEvent>? _progress;
 
     public CursorAcpSession(
         AcpJsonRpcClient rpc,
@@ -37,17 +38,18 @@ internal sealed class CursorAcpSession : ICursorAgentSession
 
     public async Task<PromptResult> PromptAsync(
         string text,
-        IProgress<string>? progress,
+        IProgress<AgentActivityEvent>? progress,
         CancellationToken cancellationToken)
     {
         var collected = new StringBuilder();
         void OnDelta(object? _, string chunk)
         {
             collected.Append(chunk);
-            progress?.Report(chunk);
+            progress?.Report(new AgentActivityEvent(AgentActivityKind.Assistant, chunk, IsChunk: true));
         }
 
         AssistantDelta += OnDelta;
+        _progress = progress;
         Activity = AgentActivity.Running;
         var promptCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         lock (_gate)
@@ -90,6 +92,7 @@ internal sealed class CursorAcpSession : ICursorAgentSession
         finally
         {
             AssistantDelta -= OnDelta;
+            _progress = null;
             lock (_gate)
             {
                 if (ReferenceEquals(_promptCts, promptCts))
@@ -130,11 +133,19 @@ internal sealed class CursorAcpSession : ICursorAgentSession
             return;
         }
 
-        var chunk = CursorAcpProtocol.ReadAssistantChunk(notification);
-        if (!string.IsNullOrEmpty(chunk))
+        var activity = CursorAcpProtocol.ReadActivity(notification);
+        if (activity is null)
         {
-            AssistantDelta?.Invoke(this, chunk);
+            return;
         }
+
+        if (activity.Kind == AgentActivityKind.Assistant)
+        {
+            AssistantDelta?.Invoke(this, activity.Text);
+            return;
+        }
+
+        _progress?.Report(activity);
     }
 
     public async ValueTask DisposeAsync()
