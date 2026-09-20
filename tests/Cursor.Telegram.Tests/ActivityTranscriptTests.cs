@@ -25,6 +25,18 @@ public sealed class ActivityTranscriptTests
     }
 
     [Fact]
+    public void Render_KeepsHeaderWhenBodyIsLong()
+    {
+        var log = new ActivityTranscript();
+        log.Add(new AgentActivityEvent(AgentActivityKind.Thought, new string('x', 8000), IsChunk: true));
+
+        var text = log.Render("⏳ Работаю…");
+
+        Assert.StartsWith("⏳ Работаю…", text);
+        Assert.True(text.Length <= 3500);
+    }
+
+    [Fact]
     public void Add_IgnoresAssistantChunks()
     {
         var log = new ActivityTranscript();

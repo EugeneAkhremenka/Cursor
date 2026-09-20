@@ -27,9 +27,21 @@ public sealed class TelegramTextTests
     }
 
     [Fact]
+    public void GroupsDisabled_MentionsSetting()
+    {
+        Assert.Contains("AllowGroupChats", TelegramText.GroupsDisabled());
+    }
+
+    [Fact]
     public void FormatPromptResult_Busy()
     {
         var text = TelegramText.FormatPromptResult(new PromptResultEnvelope(false, "", null, false, true));
         Assert.Contains("уже работает", text);
+    }
+
+    [Fact]
+    public void Help_MentionsSend()
+    {
+        Assert.Contains("/send", TelegramText.Help());
     }
 }

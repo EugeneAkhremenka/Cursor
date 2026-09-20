@@ -10,5 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Cursor.Telegram.Tests" />
+    <InternalsVisibleTo Include="Cursor.TelegramHost" />
   </ItemGroup>
 </Project>

@@ -54,6 +54,35 @@ public sealed class RepoSelectorTests
         var text = RepoSelector.FormatList(list, Path.GetFullPath(infra));
         Assert.Contains("* infra", text);
         Assert.Contains("app", text);
+        Assert.Contains("Настроенные:", text);
+    }
+
+    [Fact]
+    public void FormatList_ShowsRecentAndCursorGroups()
+    {
+        var recent = CreateTempDir();
+        var cursor = CreateTempDir();
+        var extras = new[]
+        {
+            new RepoEntry(Path.GetFileName(recent), recent, true, "recent"),
+            new RepoEntry(Path.GetFileName(cursor), cursor, false, "cursor")
+        };
+
+        var text = RepoSelector.FormatList(
+            RepoSelector.List(new CursorAgentOptions(), recent, extras),
+            recent);
+        Assert.Contains("Недавние:", text);
+        Assert.Contains("Из Cursor:", text);
+        Assert.Contains(Path.GetFileName(recent), text);
+    }
+
+    [Fact]
+    public void TryResolve_ExtraName()
+    {
+        var extraPath = CreateTempDir();
+        var extras = new[] { new RepoEntry("shots", extraPath, false, "recent") };
+        Assert.True(RepoSelector.TryResolve(new CursorAgentOptions(), "shots", out var path, out _, extras));
+        Assert.Equal(Path.GetFullPath(extraPath), path);
     }
 
     private static string CreateTempDir()

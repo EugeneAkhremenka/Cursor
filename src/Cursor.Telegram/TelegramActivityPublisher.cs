@@ -20,6 +20,7 @@ internal sealed class TelegramActivityPublisher : IProgress<AgentActivityEvent>,
     private int? _messageId;
     private string _lastSent = "";
     private bool _dirty;
+    private int _revision;
     private int _stopped;
 
     public TelegramActivityPublisher(ITelegramBotClient bot, long chatId, CancellationToken outer)
@@ -57,6 +58,7 @@ internal sealed class TelegramActivityPublisher : IProgress<AgentActivityEvent>,
         {
             _transcript.Add(value);
             _dirty = true;
+            _revision++;
         }
     }
 
@@ -109,6 +111,7 @@ internal sealed class TelegramActivityPublisher : IProgress<AgentActivityEvent>,
     private async Task FlushAsync(string header)
     {
         string text;
+        int revision;
         lock (_gate)
         {
             if (!_dirty && header == "⏳ Работаю…" && _lastSent.Length > 0)
@@ -117,7 +120,7 @@ internal sealed class TelegramActivityPublisher : IProgress<AgentActivityEvent>,
             }
 
             text = _transcript.Render(header);
-            _dirty = false;
+            revision = _revision;
         }
 
         if (text == _lastSent || _messageId is not int messageId)
@@ -129,7 +132,14 @@ internal sealed class TelegramActivityPublisher : IProgress<AgentActivityEvent>,
         {
             await _bot.EditMessageText(_chatId, messageId, text, cancellationToken: _outer)
                 .ConfigureAwait(false);
-            _lastSent = text;
+            lock (_gate)
+            {
+                _lastSent = text;
+                if (_revision == revision)
+                {
+                    _dirty = false;
+                }
+            }
         }
         catch (ApiRequestException)
         {

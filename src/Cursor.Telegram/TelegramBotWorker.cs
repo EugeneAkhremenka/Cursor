@@ -50,7 +50,10 @@ public sealed class TelegramBotWorker : BackgroundService
             DropPendingUpdates = true
         };
 
-        _logger.LogInformation("Telegram polling started for {UserCount} allowed user(s)", _options.AllowedUserIds.Length);
+        _logger.LogInformation(
+            "Telegram polling started for {UserCount} allowed user(s), groups {Groups}",
+            _options.AllowedUserIds.Length,
+            _options.AllowGroupChats ? "on" : "off");
         await _bot.ReceiveAsync(HandleUpdateAsync, HandleErrorAsync, receiverOptions, stoppingToken)
             .ConfigureAwait(false);
     }

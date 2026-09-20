@@ -189,6 +189,24 @@ Telegram polling started for 1 allowed user(s)
 | `/repo` | текущий checkout и список |
 | `/repo <имя или путь>` | сменить репо |
 | `/diff` | `git status` + `git diff --stat` |
+| `/files [фильтр]` | свежие файлы списком с номерами |
+| `/send <номер>` | прислать файл из последнего `/files` |
+| `/send last` | самый свежий файл |
+| `/send <алиас>` | из `Telegram:SendAliases` |
+| `/send <путь>` | путь от репо или абсолютный |
+| `/aliases` | показать алиасы |
+
+С телефона удобнее так: `/files png` → `/send 2`. jpg/png/webp до 10 МБ уходят фото, остальное документом, лимит Telegram для бота — 50 МБ.
+
+Алиасы и дополнительные каталоги для `/files`:
+
+```powershell
+dotnet user-secrets set Telegram:SendAliases:avatar "C:\src\assets\bot-avatar.png" --project src\Cursor.TelegramHost
+dotnet user-secrets set Telegram:SendAliases:shots "C:\src\assets" --project src\Cursor.TelegramHost
+dotnet user-secrets set Telegram:SendRoots:0 "C:\src\assets" --project src\Cursor.TelegramHost
+```
+
+Алиас на каталог отдаёт самый свежий файл оттуда. `/files` сканирует текущий репо, `SendRoots` и каталоги-алиасы, пропуская `.git`, `bin`, `obj`, `node_modules`.
 
 Пока агент работает — «занято», сначала `/cancel`. Инструменты по умолчанию `allow-always` (как удалённый shell).
 

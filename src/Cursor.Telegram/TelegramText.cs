@@ -9,6 +9,9 @@ public static class TelegramText
 
     public static string AccessDenied() => "Access denied.";
 
+    public static string GroupsDisabled() =>
+        "Групповые чаты выключены. Включите Telegram:AllowGroupChats.";
+
     public static string Help() =>
         """
         Локальный Cursor-агент (ACP), без Cloud Agents.
@@ -18,12 +21,16 @@ public static class TelegramText
         /new — сбросить сессию
         /status — состояние агента
         /cancel — остановить текущий run
-        /repo — текущий checkout и список
-        /repo <имя|путь> — переключить репозиторий
+        /repo — текущий, недавние и репо из Cursor
+        /repo <имя|путь> — переключить репозиторий (запоминается по Telegram id)
         /diff — git status и diff --stat
+        /files [фильтр] — свежие файлы списком с номерами
+        /send <номер|last|алиас|путь> — прислать файл (jpg/png/webp — фото)
+        /aliases — короткие имена из Telegram:SendAliases
 
         Обычное текстовое сообщение тоже уходит агенту как промпт.
         Пока агент работает, бот обновляет статус: thinking и вызовы тулов.
+        Группы по умолчанию выключены (Telegram:AllowGroupChats).
         """;
 
     public static string Escape(string text) => WebUtility.HtmlEncode(text);

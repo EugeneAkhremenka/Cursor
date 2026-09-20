@@ -93,6 +93,39 @@ public sealed class ChatSessionBrokerTests
         await first;
     }
 
+    [Fact]
+    public async Task RememberedRepo_RestoredOnNewBroker_AndActivateSwitchesUser()
+    {
+        var firstRepo = Directory.CreateTempSubdirectory().FullName;
+        var secondRepo = Directory.CreateTempSubdirectory().FullName;
+        var memory = new InMemoryUserRepoMemory();
+        var host = new FakeHost();
+        host.Release.TrySetResult(true);
+        var options = Options.Create(new CursorAgentOptions
+        {
+            RepoPath = firstRepo,
+            Repos = { ["one"] = firstRepo, ["two"] = secondRepo }
+        });
+
+        var broker = new ChatSessionBroker(host, options, NullLogger<ChatSessionBroker>.Instance, memory);
+        var switched = await broker.SwitchRepoAsync(137, "two", CancellationToken.None);
+        Assert.True(switched.Success);
+        Assert.Equal(secondRepo, broker.RepoPath);
+
+        var restarted = new ChatSessionBroker(
+            host,
+            Options.Create(new CursorAgentOptions { RepoPath = firstRepo }),
+            NullLogger<ChatSessionBroker>.Instance,
+            memory);
+        Assert.Equal(Path.GetFullPath(secondRepo), Path.GetFullPath(restarted.RepoPath));
+
+        memory.Remember(999, firstRepo);
+        var activated = await restarted.ActivateUserAsync(999, CancellationToken.None);
+        Assert.True(activated.Success);
+        Assert.True(activated.Changed);
+        Assert.Equal(Path.GetFullPath(firstRepo), Path.GetFullPath(restarted.RepoPath));
+    }
+
     private sealed class FakeHost : ICursorAgentHost
     {
         public TaskCompletionSource<bool> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

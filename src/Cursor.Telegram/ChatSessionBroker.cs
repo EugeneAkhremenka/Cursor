@@ -8,6 +8,7 @@ public sealed class ChatSessionBroker
 {
     private readonly ICursorAgentHost _host;
     private readonly CursorAgentOptions _options;
+    private readonly IUserRepoMemory _memory;
     private readonly ILogger<ChatSessionBroker> _logger;
     private readonly SemaphoreSlim _mutex = new(1, 1);
     private ICursorAgentSession? _session;
@@ -18,10 +19,20 @@ public sealed class ChatSessionBroker
         ICursorAgentHost host,
         IOptions<CursorAgentOptions> options,
         ILogger<ChatSessionBroker> logger)
+        : this(host, options, logger, new InMemoryUserRepoMemory())
+    {
+    }
+
+    public ChatSessionBroker(
+        ICursorAgentHost host,
+        IOptions<CursorAgentOptions> options,
+        ILogger<ChatSessionBroker> logger,
+        IUserRepoMemory memory)
     {
         _host = host;
         _options = options.Value;
         _logger = logger;
+        _memory = memory;
         _options.Repos ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         _currentRepoPath = _options.RepoPath;
         if (string.IsNullOrWhiteSpace(_currentRepoPath)
@@ -30,11 +41,21 @@ public sealed class ChatSessionBroker
         {
             _currentRepoPath = first;
         }
+
+        if (_memory.TryGetLast(out var userId, out var remembered)
+            && Directory.Exists(remembered))
+        {
+            _currentRepoPath = Path.GetFullPath(remembered);
+            _logger.LogInformation("Restored repo {Path} for Telegram user {UserId}", _currentRepoPath, userId);
+        }
     }
 
     public string RepoPath => _currentRepoPath;
 
-    public IReadOnlyList<RepoEntry> ListRepos() => RepoSelector.List(_options, _currentRepoPath);
+    public IReadOnlyList<RepoEntry> ListRepos() => ListRepos(userId: null);
+
+    public IReadOnlyList<RepoEntry> ListRepos(long? userId) =>
+        RepoSelector.List(_options, _currentRepoPath, ExtraRepos(userId));
 
     public AgentSessionStatus Status()
     {
@@ -123,7 +144,29 @@ public sealed class ChatSessionBroker
         return _session;
     }
 
-    public async Task<RepoSwitchResult> SwitchRepoAsync(string selector, CancellationToken cancellationToken)
+    public Task<RepoSwitchResult> SwitchRepoAsync(string selector, CancellationToken cancellationToken) =>
+        SwitchRepoAsync(userId: null, selector, cancellationToken);
+
+    public async Task<RepoSwitchResult> ActivateUserAsync(long userId, CancellationToken cancellationToken)
+    {
+        var target = ResolvePathForUser(userId);
+        if (RepoSelector.PathsEqual(target, _currentRepoPath))
+        {
+            if (!string.IsNullOrWhiteSpace(target))
+            {
+                _memory.Remember(userId, target);
+            }
+
+            return RepoSwitchResult.Ok(target, changed: false);
+        }
+
+        return await SwitchRepoAsync(userId, target, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<RepoSwitchResult> SwitchRepoAsync(
+        long? userId,
+        string selector,
+        CancellationToken cancellationToken)
     {
         if (!await _mutex.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
@@ -132,24 +175,71 @@ public sealed class ChatSessionBroker
 
         try
         {
-            if (!RepoSelector.TryResolve(_options, selector, out var path, out var error))
+            if (!RepoSelector.TryResolve(_options, selector, out var path, out var error, ExtraRepos(userId)))
             {
                 return RepoSwitchResult.Fail(error, _currentRepoPath);
             }
 
             if (RepoSelector.PathsEqual(path, _currentRepoPath))
             {
+                RememberIfNeeded(userId, path);
                 return RepoSwitchResult.Ok(path, changed: false);
             }
 
             await DropSessionAsync().ConfigureAwait(false);
             _currentRepoPath = path;
+            RememberIfNeeded(userId, path);
             _logger.LogInformation("Switched repo cwd to {Path}", path);
             return RepoSwitchResult.Ok(path, changed: true);
         }
         finally
         {
             _mutex.Release();
+        }
+    }
+
+    private IReadOnlyList<RepoEntry> ExtraRepos(long? userId)
+    {
+        var extras = new List<RepoEntry>();
+        if (userId is long id)
+        {
+            foreach (var path in _memory.ListHistory(id))
+            {
+                extras.Add(new RepoEntry(CursorWorkspaceCatalog.ShortName(path), path, false, "recent"));
+            }
+        }
+
+        foreach (var (name, path) in CursorWorkspaceCatalog.Discover())
+        {
+            extras.Add(new RepoEntry(name, path, false, "cursor"));
+        }
+
+        return extras;
+    }
+
+    private string ResolvePathForUser(long userId)
+    {
+        if (_memory.TryGet(userId, out var stored) && Directory.Exists(stored))
+        {
+            return Path.GetFullPath(stored);
+        }
+
+        foreach (var path in _memory.ListHistory(userId))
+        {
+            if (Directory.Exists(path))
+            {
+                return Path.GetFullPath(path);
+            }
+        }
+
+        return _currentRepoPath;
+    }
+
+    private void RememberIfNeeded(long? userId, string path)
+    {
+        if (userId is long id && !string.IsNullOrWhiteSpace(path))
+        {
+            _memory.Remember(id, path);
         }
     }
 

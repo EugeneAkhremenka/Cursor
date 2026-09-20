@@ -37,7 +37,6 @@ internal sealed class ActivityTranscript
     public string Render(string header)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(header);
 
         if (_thought.Length > 0)
         {
@@ -62,7 +61,14 @@ internal sealed class ActivityTranscript
             }
         }
 
-        return TrimTo(sb.ToString().TrimEnd(), MaxMessageChars);
+        var body = sb.ToString().TrimEnd();
+        var budget = Math.Max(0, MaxMessageChars - header.Length - 1);
+        if (body.Length > budget)
+        {
+            body = Tail(body, budget);
+        }
+
+        return string.IsNullOrEmpty(body) ? header : header + "\n" + body;
     }
 
     private void UpsertTool(AgentActivityEvent ev)

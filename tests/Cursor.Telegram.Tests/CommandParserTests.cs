@@ -10,6 +10,8 @@ public sealed class CommandParserTests
     [InlineData("/task fix the test", "task", "fix the test")]
     [InlineData("/task@MyBot  hello", "task", "hello")]
     [InlineData("/new", "new", "")]
+    [InlineData("/send pic.png", "send", "pic.png")]
+    [InlineData("/file@MyBot  C:\\a.png", "file", @"C:\a.png")]
     public void Parse_Commands(string text, string name, string args)
     {
         var parsed = CommandParser.Parse(text);

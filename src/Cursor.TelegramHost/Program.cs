@@ -7,6 +7,14 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
 builder.Services.Configure<CursorAgentOptions>(builder.Configuration.GetSection(CursorAgentOptions.SectionName));
+builder.Services.AddSingleton<IUserRepoMemory>(sp =>
+{
+    var configured = sp.GetRequiredService<IOptions<TelegramOptions>>().Value.RepoMemoryPath;
+    var path = string.IsNullOrWhiteSpace(configured)
+        ? FileUserRepoMemory.DefaultPath()
+        : configured;
+    return new FileUserRepoMemory(path);
+});
 builder.Services.AddSingleton<ICursorAgentHost, CursorAcpAgentHost>();
 builder.Services.AddSingleton<ChatSessionBroker>();
 builder.Services.AddSingleton<TelegramUpdateHandler>();

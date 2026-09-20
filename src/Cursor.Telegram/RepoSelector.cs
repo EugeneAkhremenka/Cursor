@@ -4,31 +4,47 @@ namespace Cursor.Telegram;
 
 public static class RepoSelector
 {
-    public static IReadOnlyList<RepoEntry> List(Cursor.Agent.CursorAgentOptions options, string currentPath)
+    public static IReadOnlyList<RepoEntry> List(
+        Cursor.Agent.CursorAgentOptions options,
+        string currentPath,
+        IEnumerable<RepoEntry>? extra = null)
     {
         var entries = new List<RepoEntry>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var (name, rawPath) in EnumerateConfigured(options))
         {
-            if (!TryNormalize(rawPath, out var path, out _))
+            if (!TryNormalize(rawPath, out var path, out _) || !seen.Add(path))
             {
                 continue;
             }
 
-            if (!seen.Add(path))
-            {
-                continue;
-            }
+            var unique = UniqueName(name, names);
+            entries.Add(new RepoEntry(unique, path, PathsEqual(path, currentPath), "configured"));
+        }
 
-            entries.Add(new RepoEntry(name, path, PathsEqual(path, currentPath)));
+        if (extra is not null)
+        {
+            foreach (var item in extra)
+            {
+                if (!TryNormalize(item.Path, out var path, out _) || !seen.Add(path))
+                {
+                    continue;
+                }
+
+                var unique = UniqueName(item.Name, names);
+                entries.Add(new RepoEntry(unique, path, PathsEqual(path, currentPath), item.Group));
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(currentPath)
             && TryNormalize(currentPath, out var current, out _)
             && seen.Add(current))
         {
-            entries.Insert(0, new RepoEntry("current", current, true));
+            entries.Insert(0, new RepoEntry(UniqueName("current", names), current, true, "recent"));
         }
 
         return entries;
@@ -38,7 +54,8 @@ public static class RepoSelector
         Cursor.Agent.CursorAgentOptions options,
         string selector,
         [NotNullWhen(true)] out string? path,
-        [NotNullWhen(false)] out string? error)
+        [NotNullWhen(false)] out string? error,
+        IEnumerable<RepoEntry>? extra = null)
     {
         path = null;
         error = null;
@@ -62,6 +79,24 @@ public static class RepoSelector
             }
 
             return Directory.Exists(path) || FailMissing(path, out error);
+        }
+
+        if (extra is not null)
+        {
+            foreach (var item in extra)
+            {
+                if (!string.Equals(item.Name, trimmed, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!TryNormalize(item.Path, out path, out error))
+                {
+                    return false;
+                }
+
+                return Directory.Exists(path) || FailMissing(path, out error);
+            }
         }
 
         if (!LooksLikePath(trimmed))
@@ -122,16 +157,56 @@ public static class RepoSelector
         }
         else
         {
-            foreach (var entry in entries)
-            {
-                var mark = entry.IsCurrent ? "*" : " ";
-                lines.Add($"{mark} {entry.Name}  {entry.Path}");
-            }
+            AppendGroup(lines, entries, "recent", "Недавние:");
+            AppendGroup(lines, entries, "cursor", "Из Cursor:");
+            AppendGroup(lines, entries, "configured", "Настроенные:");
         }
 
         lines.Add("");
         lines.Add("/repo <имя|путь> — переключить checkout и сбросить сессию.");
         return string.Join('\n', lines);
+    }
+
+    private static void AppendGroup(
+        List<string> lines,
+        IReadOnlyList<RepoEntry> entries,
+        string group,
+        string title)
+    {
+        var items = entries.Where(entry => entry.Group == group).ToList();
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        lines.Add(title);
+        foreach (var entry in items)
+        {
+            var mark = entry.IsCurrent ? "*" : " ";
+            lines.Add($"{mark} {entry.Name}  {entry.Path}");
+        }
+
+        lines.Add("");
+    }
+
+    private static string UniqueName(string preferred, HashSet<string> used)
+    {
+        var name = string.IsNullOrWhiteSpace(preferred) ? "repo" : preferred.Trim();
+        if (used.Add(name))
+        {
+            return name;
+        }
+
+        for (var i = 2; i < 100; i++)
+        {
+            var candidate = $"{name}-{i}";
+            if (used.Add(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return name + "-" + Guid.NewGuid().ToString("N")[..6];
     }
 
     private static IEnumerable<(string Name, string Path)> EnumerateConfigured(Cursor.Agent.CursorAgentOptions options)
@@ -187,4 +262,4 @@ public static class RepoSelector
     }
 }
 
-public readonly record struct RepoEntry(string Name, string Path, bool IsCurrent);
+public readonly record struct RepoEntry(string Name, string Path, bool IsCurrent, string Group = "configured");
