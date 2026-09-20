@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{96129996-0640-4672-97B0-E89BA2FE575C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cursor.Agent.Abstractions", "src\Cursor.Agent.Abstractions\Cursor.Agent.Abstractions.csproj", "{373B4D8B-9531-4E80-9808-80A796477E38}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cursor.Agent", "src\Cursor.Agent\Cursor.Agent.csproj", "{AA4D0BEA-10EC-45C5-BE94-0F391E75B6EF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cursor.Telegram", "src\Cursor.Telegram\Cursor.Telegram.csproj", "{DEB1EE7B-AA8A-45CD-91AA-AA982182DBBC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cursor.TelegramHost", "src\Cursor.TelegramHost\Cursor.TelegramHost.csproj", "{73F0C0F7-AAB5-409C-A4A3-0CE7FC9BDD11}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{A12130C2-329A-4837-98E7-A978607D8A0F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cursor.Agent.Tests", "tests\Cursor.Agent.Tests\Cursor.Agent.Tests.csproj", "{FE9865F9-8827-4C89-9B3B-C2043F2B6DC6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cursor.Telegram.Tests", "tests\Cursor.Telegram.Tests\Cursor.Telegram.Tests.csproj", "{0D896C8E-EC73-42A0-9AA5-29D6EC81E5ED}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{373B4D8B-9531-4E80-9808-80A796477E38}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{373B4D8B-9531-4E80-9808-80A796477E38}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{373B4D8B-9531-4E80-9808-80A796477E38}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{373B4D8B-9531-4E80-9808-80A796477E38}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AA4D0BEA-10EC-45C5-BE94-0F391E75B6EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AA4D0BEA-10EC-45C5-BE94-0F391E75B6EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AA4D0BEA-10EC-45C5-BE94-0F391E75B6EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AA4D0BEA-10EC-45C5-BE94-0F391E75B6EF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DEB1EE7B-AA8A-45CD-91AA-AA982182DBBC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DEB1EE7B-AA8A-45CD-91AA-AA982182DBBC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DEB1EE7B-AA8A-45CD-91AA-AA982182DBBC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DEB1EE7B-AA8A-45CD-91AA-AA982182DBBC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{73F0C0F7-AAB5-409C-A4A3-0CE7FC9BDD11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{73F0C0F7-AAB5-409C-A4A3-0CE7FC9BDD11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{73F0C0F7-AAB5-409C-A4A3-0CE7FC9BDD11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{73F0C0F7-AAB5-409C-A4A3-0CE7FC9BDD11}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FE9865F9-8827-4C89-9B3B-C2043F2B6DC6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE9865F9-8827-4C89-9B3B-C2043F2B6DC6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE9865F9-8827-4C89-9B3B-C2043F2B6DC6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE9865F9-8827-4C89-9B3B-C2043F2B6DC6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0D896C8E-EC73-42A0-9AA5-29D6EC81E5ED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0D896C8E-EC73-42A0-9AA5-29D6EC81E5ED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0D896C8E-EC73-42A0-9AA5-29D6EC81E5ED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0D896C8E-EC73-42A0-9AA5-29D6EC81E5ED}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{373B4D8B-9531-4E80-9808-80A796477E38} = {96129996-0640-4672-97B0-E89BA2FE575C}
+		{AA4D0BEA-10EC-45C5-BE94-0F391E75B6EF} = {96129996-0640-4672-97B0-E89BA2FE575C}
+		{DEB1EE7B-AA8A-45CD-91AA-AA982182DBBC} = {96129996-0640-4672-97B0-E89BA2FE575C}
+		{73F0C0F7-AAB5-409C-A4A3-0CE7FC9BDD11} = {96129996-0640-4672-97B0-E89BA2FE575C}
+		{FE9865F9-8827-4C89-9B3B-C2043F2B6DC6} = {A12130C2-329A-4837-98E7-A978607D8A0F}
+		{0D896C8E-EC73-42A0-9AA5-29D6EC81E5ED} = {A12130C2-329A-4837-98E7-A978607D8A0F}
+	EndGlobalSection
+EndGlobal
