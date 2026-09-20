@@ -93,7 +93,11 @@ public sealed class ChatSessionBrokerTests
             return PromptResult.Ok("echo:" + text);
         }
 
-        public Task CancelAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task CancelAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
 
         public ValueTask DisposeAsync()
         {

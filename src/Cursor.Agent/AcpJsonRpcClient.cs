@@ -377,8 +377,26 @@ internal sealed class AcpJsonRpcClient : IAsyncDisposable
             }
         }
 
-        _reader.Dispose();
-        await _writer.DisposeAsync().ConfigureAwait(false);
+        try
+        {
+            _reader.Dispose();
+        }
+        catch (IOException)
+        {
+            // The peer (agent process or test pipe) may already be gone.
+        }
+
+        try
+        {
+            await _writer.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
         _writeLock.Dispose();
         _lifetime.Dispose();
     }

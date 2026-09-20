@@ -1,4 +1,4 @@
-using System.IO.Pipes;
+using System.IO.Pipelines;
 
 namespace Cursor.Agent.Tests;
 
@@ -6,15 +6,11 @@ internal static class ConnectedStreams
 {
     public static (DuplexStream Client, DuplexStream Server) Create()
     {
-        var clientToServer = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.None);
-        var serverToClient = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.None);
-        var serverIn = new AnonymousPipeClientStream(PipeDirection.In, clientToServer.GetClientHandleAsString());
-        var clientIn = new AnonymousPipeClientStream(PipeDirection.In, serverToClient.GetClientHandleAsString());
-        clientToServer.DisposeLocalCopyOfClientHandle();
-        serverToClient.DisposeLocalCopyOfClientHandle();
+        var toServer = new Pipe();
+        var toClient = new Pipe();
         return (
-            new DuplexStream(clientIn, clientToServer),
-            new DuplexStream(serverIn, serverToClient));
+            new DuplexStream(toClient.Reader.AsStream(), toServer.Writer.AsStream()),
+            new DuplexStream(toServer.Reader.AsStream(), toClient.Writer.AsStream()));
     }
 }
 
@@ -75,8 +71,8 @@ internal sealed class DuplexStream : Stream
     {
         if (disposing)
         {
-            _read.Dispose();
             _write.Dispose();
+            _read.Dispose();
         }
 
         base.Dispose(disposing);
@@ -84,8 +80,8 @@ internal sealed class DuplexStream : Stream
 
     public override async ValueTask DisposeAsync()
     {
-        await _read.DisposeAsync().ConfigureAwait(false);
         await _write.DisposeAsync().ConfigureAwait(false);
+        await _read.DisposeAsync().ConfigureAwait(false);
         await base.DisposeAsync().ConfigureAwait(false);
     }
 }
