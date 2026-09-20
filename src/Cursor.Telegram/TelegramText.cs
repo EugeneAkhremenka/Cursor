@@ -16,6 +16,8 @@ public static class TelegramText
         /new — сбросить сессию
         /status — состояние агента
         /cancel — остановить текущий run
+        /repo — текущий checkout и список
+        /repo <имя|путь> — переключить репозиторий
         /diff — git status и diff --stat
 
         Обычное текстовое сообщение тоже уходит агенту как промпт.

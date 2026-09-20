@@ -12,6 +12,7 @@ public sealed class ChatSessionBroker
     private readonly SemaphoreSlim _mutex = new(1, 1);
     private ICursorAgentSession? _session;
     private CancellationTokenSource? _promptCts;
+    private string _currentRepoPath;
 
     public ChatSessionBroker(
         ICursorAgentHost host,
@@ -21,16 +22,26 @@ public sealed class ChatSessionBroker
         _host = host;
         _options = options.Value;
         _logger = logger;
+        _options.Repos ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        _currentRepoPath = _options.RepoPath;
+        if (string.IsNullOrWhiteSpace(_currentRepoPath)
+            && _options.Repos.Count > 0
+            && RepoSelector.TryNormalize(_options.Repos.Values.First(), out var first, out _))
+        {
+            _currentRepoPath = first;
+        }
     }
 
-    public string RepoPath => _options.RepoPath;
+    public string RepoPath => _currentRepoPath;
+
+    public IReadOnlyList<RepoEntry> ListRepos() => RepoSelector.List(_options, _currentRepoPath);
 
     public AgentSessionStatus Status()
     {
         var session = _session;
         return new AgentSessionStatus(
             session?.SessionId,
-            session?.WorkingDirectory ?? _options.RepoPath,
+            session?.WorkingDirectory ?? _currentRepoPath,
             session?.Activity ?? AgentActivity.Idle,
             session is not null);
     }
@@ -102,8 +113,38 @@ public sealed class ChatSessionBroker
         }
 
         await DropSessionAsync().ConfigureAwait(false);
-        _session = await _host.CreateSessionAsync(_options.RepoPath, cancellationToken).ConfigureAwait(false);
+        _session = await _host.CreateSessionAsync(_currentRepoPath, cancellationToken).ConfigureAwait(false);
         return _session;
+    }
+
+    public async Task<RepoSwitchResult> SwitchRepoAsync(string selector, CancellationToken cancellationToken)
+    {
+        if (!await _mutex.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        {
+            return RepoSwitchResult.WasBusy(_currentRepoPath);
+        }
+
+        try
+        {
+            if (!RepoSelector.TryResolve(_options, selector, out var path, out var error))
+            {
+                return RepoSwitchResult.Fail(error, _currentRepoPath);
+            }
+
+            if (RepoSelector.PathsEqual(path, _currentRepoPath))
+            {
+                return RepoSwitchResult.Ok(path, changed: false);
+            }
+
+            await DropSessionAsync().ConfigureAwait(false);
+            _currentRepoPath = path;
+            _logger.LogInformation("Switched repo cwd to {Path}", path);
+            return RepoSwitchResult.Ok(path, changed: true);
+        }
+        finally
+        {
+            _mutex.Release();
+        }
     }
 
     private async Task DropSessionAsync()

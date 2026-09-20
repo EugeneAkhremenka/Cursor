@@ -84,6 +84,10 @@ public sealed class TelegramUpdateHandler
                 await _broker.CancelAsync(cancellationToken).ConfigureAwait(false);
                 await ReplyAsync(chatId, "Отправляю cancel текущему run.", cancellationToken).ConfigureAwait(false);
                 return;
+            case "repo":
+            case "repos":
+                await HandleRepoAsync(chatId, command.Value.Arguments, cancellationToken).ConfigureAwait(false);
+                return;
             case "diff":
                 var diff = await GitWorkingTree.DescribeAsync(_broker.RepoPath, cancellationToken).ConfigureAwait(false);
                 await ReplyAsync(chatId, diff, cancellationToken).ConfigureAwait(false);
@@ -101,6 +105,31 @@ public sealed class TelegramUpdateHandler
                 await ReplyAsync(chatId, "Неизвестная команда. /help", cancellationToken).ConfigureAwait(false);
                 return;
         }
+    }
+
+    private async Task HandleRepoAsync(long chatId, string arguments, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+        {
+            await ReplyAsync(
+                chatId,
+                RepoSelector.FormatList(_broker.ListRepos(), _broker.RepoPath),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var result = await _broker.SwitchRepoAsync(arguments, cancellationToken).ConfigureAwait(false);
+        if (!result.Success)
+        {
+            await ReplyAsync(chatId, result.Error ?? "Не удалось переключить репозиторий.", cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        var message = result.Changed
+            ? $"Репозиторий: {result.Path}\nСессия сброшена, следующий промпт откроет агента здесь."
+            : $"Уже этот checkout:\n{result.Path}";
+        await ReplyAsync(chatId, message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RunPromptAsync(long chatId, string prompt, CancellationToken cancellationToken)

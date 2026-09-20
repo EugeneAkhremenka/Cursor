@@ -22,6 +22,9 @@ export Telegram__BotToken="123:abc"
 export Telegram__AllowedUserIds__0="YOUR_NUMERIC_ID"
 export Cursor__ApiKey="crsr_..."
 export Cursor__RepoPath="/absolute/path/to/repo"
+# optional named checkouts for /repo <name>
+export Cursor__Repos__app="/absolute/path/to/app"
+export Cursor__Repos__infra="/absolute/path/to/infra"
 
 dotnet run --project src/Cursor.TelegramHost
 ```
@@ -46,7 +49,11 @@ dotnet user-secrets set Cursor:RepoPath "/absolute/path/to/repo" --project src/C
 | `/new` | сбросить сессию |
 | `/status` | cwd / session / activity |
 | `/cancel` | остановить текущий run |
+| `/repo` | текущий checkout и список |
+| `/repo <имя\|путь>` | переключить репозиторий (сессия сбрасывается) |
 | `/diff` | `git status --short` и `git diff --stat` |
+
+`Cursor:RepoPath` — стартовый cwd. Из Telegram его можно сменить: `/repo infra` по имени из `Cursor:Repos` или `/repo /abs/path` если каталог существует. Следующий промпт поднимет новый `agent acp` уже в этом checkout.
 
 Пока идёт run, второй промпт получает «занято».
 

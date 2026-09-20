@@ -46,6 +46,53 @@ public sealed class ChatSessionBrokerTests
         Assert.True(host.LastSession?.Disposed);
     }
 
+    [Fact]
+    public async Task SwitchRepo_ByName_ResetsSessionAndUpdatesCwd()
+    {
+        var app = Directory.CreateTempSubdirectory().FullName;
+        var infra = Directory.CreateTempSubdirectory().FullName;
+        var host = new FakeHost();
+        host.Release.TrySetResult(true);
+        var broker = new ChatSessionBroker(
+            host,
+            Options.Create(new CursorAgentOptions
+            {
+                RepoPath = app,
+                Repos = { ["app"] = app, ["infra"] = infra }
+            }),
+            NullLogger<ChatSessionBroker>.Instance);
+
+        await broker.PromptAsync("hi", CancellationToken.None);
+        Assert.Equal(app, host.LastSession?.WorkingDirectory);
+
+        var switched = await broker.SwitchRepoAsync("infra", CancellationToken.None);
+        Assert.True(switched.Success);
+        Assert.True(switched.Changed);
+        Assert.False(broker.Status().HasSession);
+        Assert.Equal(infra, broker.RepoPath);
+
+        await broker.PromptAsync("next", CancellationToken.None);
+        Assert.Equal(infra, host.LastSession?.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task SwitchRepo_WhileBusy_IsRejected()
+    {
+        var host = new FakeHost();
+        var broker = new ChatSessionBroker(
+            host,
+            Options.Create(new CursorAgentOptions { RepoPath = "/tmp" }),
+            NullLogger<ChatSessionBroker>.Instance);
+
+        var first = broker.PromptAsync("one", CancellationToken.None);
+        await host.Entered.Task;
+        var switched = await broker.SwitchRepoAsync("/var", CancellationToken.None);
+        Assert.True(switched.Busy);
+
+        host.Release.TrySetResult(true);
+        await first;
+    }
+
     private sealed class FakeHost : ICursorAgentHost
     {
         public TaskCompletionSource<bool> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
