@@ -183,6 +183,7 @@ Telegram polling started for 1 allowed user(s)
 |---|---|
 | `/start` | справка |
 | текст или `/task …` | промпт текущей сессии |
+| фото / документ / голос / видео | сохранить в `telegram-inbox/`, caption → промпт (картинки ещё и в ACP) |
 | `/new` | сбросить сессию, тот же репо |
 | `/status` | cwd / session |
 | `/cancel` | стоп текущего run |
@@ -264,6 +265,14 @@ Windows Service тут хуже: нет интерактивного профи�
 - **Execution Policy** на `irm \| iex` — открой PowerShell и выполни установщик ещё раз; при блоке: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 - **Сон / быстрый запуск** — бот перестаёт поллить Telegram
 - **Антивирус** режет `agent.cmd` child process — исключение на `%LOCALAPPDATA%\cursor-agent` и папку worker
+- **Ход обрывается на полуслове (ECONNRESET)** — обрыв HTTP/2-потока к бэкенду Cursor. В режиме `acp` CLI такой ход **не** возобновляет: он дописывает в ответ строку `Error: RetriableError: [aborted] read ECONNRESET` и завершает ход как обычный. Воркер ловит эту строку в хвосте ответа и просит агента продолжить с места обрыва. Если обрывы идут подряд, помогает HTTP/1 в `~/.cursor/cli-config.json`: `"network": { "useHttp1ForAgent": true }`
+
+| Настройка | Смысл |
+|---|---|
+| `Cursor:EndlessRetries` | `true` — передать CLI `--endless-retries`. Флаг скрытый и на `acp` не влияет: возобновление держит воркер |
+| `Cursor:PromptIdleTimeoutSeconds` | нет ни текста, ни мыслей, ни вызовов тулов столько секунд — ход режется (`0` выключает) |
+| `Cursor:PromptRetries` | сколько раз продолжить ход после обрыва — и когда ошибка пришла как RPC, и когда она прилетела текстом |
+| `Cursor:AgentHttpProtocol` | транспорт CLI до бэкенда: `auto` (не трогать конфиг CLI), `http1`, `http2`. Именно HTTP/2-поток и рвётся с ECONNRESET; `http1` это лечит, но у него свой баг — раздутые запросы упираются в серверный лимит 50 МБ на больших репо. Воркер пишет значение в `cli-config.json` CLI: другого способа его задать нет |
 
 ---
 

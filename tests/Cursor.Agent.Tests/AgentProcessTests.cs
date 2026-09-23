@@ -48,4 +48,42 @@ public sealed class AgentProcessTests
         Assert.Equal(["acp"], start.ArgumentList.ToArray());
         Assert.Equal("/tmp/repo", start.WorkingDirectory);
     }
+
+    [Fact]
+    public void CreateStartInfo_PassesModelAndMode()
+    {
+        var start = AgentProcess.CreateStartInfo("/usr/bin/agent", "/tmp/repo", "", "composer-2.5", "plan");
+        Assert.Equal(["--model", "composer-2.5", "--mode", "plan", "acp"], start.ArgumentList.ToArray());
+    }
+
+    [Fact]
+    public void CreateStartInfo_CmdWrapper_KeepsModelInsideSQuotes()
+    {
+        var cmd = @"C:\Users\me\AppData\Local\cursor-agent\agent.cmd";
+        var start = AgentProcess.CreateStartInfo(cmd, @"C:\repo", "key", "auto", "agent");
+        Assert.Equal(
+            @"/d /s /c """"C:\Users\me\AppData\Local\cursor-agent\agent.cmd"" --model auto acp""",
+            start.Arguments);
+    }
+
+    [Fact]
+    public void CreateStartInfo_OmitsDefaultAgentMode()
+    {
+        var start = AgentProcess.CreateStartInfo("/usr/bin/agent", "/tmp/repo", "", "auto", "agent");
+        Assert.Equal(["--model", "auto", "acp"], start.ArgumentList.ToArray());
+    }
+
+    [Fact]
+    public void BuildAcpArguments_AddsEndlessRetriesBeforeAcp()
+    {
+        Assert.Equal(
+            ["--model", "auto", "--endless-retries", "acp"],
+            AgentProcess.BuildAcpArguments("auto", "agent", endlessRetries: true).ToArray());
+    }
+
+    [Fact]
+    public void BuildAcpArguments_OmitsEndlessRetriesByDefault()
+    {
+        Assert.DoesNotContain("--endless-retries", AgentProcess.BuildAcpArguments("auto", "agent"));
+    }
 }

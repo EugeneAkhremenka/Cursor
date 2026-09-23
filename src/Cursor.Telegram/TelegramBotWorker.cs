@@ -44,9 +44,19 @@ public sealed class TelegramBotWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        try
+        {
+            await _bot.SetMyCommands(TelegramCommandUi.BotCommands(), cancellationToken: stoppingToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to register Telegram bot commands");
+        }
+
         var receiverOptions = new ReceiverOptions
         {
-            AllowedUpdates = [UpdateType.Message],
+            AllowedUpdates = [UpdateType.Message, UpdateType.CallbackQuery],
             DropPendingUpdates = true
         };
 

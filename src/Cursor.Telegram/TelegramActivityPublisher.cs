@@ -1,6 +1,7 @@
 using Cursor.Agent;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
+using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
 namespace Cursor.Telegram;
@@ -11,8 +12,10 @@ internal sealed class TelegramActivityPublisher : IProgress<AgentActivityEvent>,
 
     private readonly ITelegramBotClient _bot;
     private readonly long _chatId;
+    private readonly string _repoPath;
     private readonly ActivityTranscript _transcript = new();
     private readonly object _gate = new();
+    private readonly List<Task> _uploads = [];
     private readonly CancellationTokenSource _cts = new();
     private readonly PeriodicTimer _timer = new(FlushPeriod);
     private readonly CancellationToken _outer;
@@ -23,10 +26,15 @@ internal sealed class TelegramActivityPublisher : IProgress<AgentActivityEvent>,
     private int _revision;
     private int _stopped;
 
-    public TelegramActivityPublisher(ITelegramBotClient bot, long chatId, CancellationToken outer)
+    public TelegramActivityPublisher(
+        ITelegramBotClient bot,
+        long chatId,
+        CancellationToken outer,
+        string? repoPath = null)
     {
         _bot = bot;
         _chatId = chatId;
+        _repoPath = repoPath ?? "";
         _outer = outer;
     }
 
@@ -59,12 +67,19 @@ internal sealed class TelegramActivityPublisher : IProgress<AgentActivityEvent>,
             _transcript.Add(value);
             _dirty = true;
             _revision++;
+            if (value.Kind == AgentActivityKind.Image
+                && value.Status == "completed"
+                && !string.IsNullOrWhiteSpace(value.Text))
+            {
+                _uploads.Add(SendGeneratedAsync(value.Text));
+            }
         }
     }
 
     public async Task FinishAsync(PromptResult result)
     {
         await StopLoopAsync().ConfigureAwait(false);
+        await AwaitUploadsAsync().ConfigureAwait(false);
         if (result.Busy)
         {
             await TryDeleteAsync().ConfigureAwait(false);
@@ -145,6 +160,74 @@ internal sealed class TelegramActivityPublisher : IProgress<AgentActivityEvent>,
         {
         }
         catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task AwaitUploadsAsync()
+    {
+        Task[] pending;
+        lock (_gate)
+        {
+            pending = _uploads.ToArray();
+            _uploads.Clear();
+        }
+
+        if (pending.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.WhenAll(pending).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private async Task SendGeneratedAsync(string path)
+    {
+        var repo = string.IsNullOrWhiteSpace(_repoPath)
+            ? Path.GetDirectoryName(path) ?? ""
+            : _repoPath;
+        if (!TelegramOutboundFile.TryPrepare(repo, path, out var prepared, out _))
+        {
+            return;
+        }
+
+        try
+        {
+            await using var stream = new FileStream(
+                prepared.Path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            var input = InputFile.FromStream(stream, prepared.FileName);
+            if (prepared.Kind == TelegramSendKind.Photo)
+            {
+                await _bot.SendChatAction(_chatId, ChatAction.UploadPhoto, cancellationToken: _outer)
+                    .ConfigureAwait(false);
+                await _bot.SendPhoto(
+                        _chatId,
+                        input,
+                        caption: prepared.FileName,
+                        cancellationToken: _outer)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            await _bot.SendChatAction(_chatId, ChatAction.UploadDocument, cancellationToken: _outer)
+                .ConfigureAwait(false);
+            await _bot.SendDocument(
+                    _chatId,
+                    input,
+                    caption: prepared.FileName,
+                    cancellationToken: _outer)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
         {
         }
     }

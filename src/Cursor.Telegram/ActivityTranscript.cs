@@ -31,6 +31,9 @@ internal sealed class ActivityTranscript
             case AgentActivityKind.Tool:
                 UpsertTool(ev);
                 break;
+            case AgentActivityKind.Image:
+                UpsertTool(ImageAsTool(ev));
+                break;
         }
     }
 
@@ -69,6 +72,16 @@ internal sealed class ActivityTranscript
         }
 
         return string.IsNullOrEmpty(body) ? header : header + "\n" + body;
+    }
+
+    private static AgentActivityEvent ImageAsTool(AgentActivityEvent ev)
+    {
+        var text = ev.Status == "completed"
+            ? "картинка " + (Path.GetFileName(ev.Text) is { Length: > 0 } name ? name : ev.Text)
+            : string.IsNullOrWhiteSpace(ev.Text)
+                ? "генерация картинки"
+                : ev.Text;
+        return new AgentActivityEvent(AgentActivityKind.Tool, text, ev.IsChunk, ev.Id, ev.Status);
     }
 
     private void UpsertTool(AgentActivityEvent ev)

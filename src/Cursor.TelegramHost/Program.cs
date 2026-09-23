@@ -15,6 +15,14 @@ builder.Services.AddSingleton<IUserRepoMemory>(sp =>
         : configured;
     return new FileUserRepoMemory(path);
 });
+builder.Services.AddSingleton<IChatTranscript>(sp =>
+{
+    var configured = sp.GetRequiredService<IOptions<TelegramOptions>>().Value.ChatLogDirectory;
+    var directory = string.IsNullOrWhiteSpace(configured)
+        ? FileChatTranscript.DefaultDirectory()
+        : configured;
+    return new FileChatTranscript(directory);
+});
 builder.Services.AddSingleton<ICursorAgentHost, CursorAcpAgentHost>();
 builder.Services.AddSingleton<ChatSessionBroker>();
 builder.Services.AddSingleton<TelegramUpdateHandler>();

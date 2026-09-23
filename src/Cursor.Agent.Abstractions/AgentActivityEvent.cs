@@ -5,7 +5,8 @@ public enum AgentActivityKind
     Thought,
     Tool,
     Assistant,
-    Plan
+    Plan,
+    Image
 }
 
 public sealed record AgentActivityEvent(

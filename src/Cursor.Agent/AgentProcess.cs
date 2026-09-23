@@ -49,6 +49,59 @@ internal static class AgentProcess
         return agentPath;
     }
 
+    internal static IReadOnlyList<string> BuildAcpArguments(
+        string? model,
+        string? mode,
+        bool endlessRetries = false)
+    {
+        var args = new List<string>();
+        AppendFlag(args, "--model", model);
+        // CLI --mode only accepts plan|ask. Default agent mode is omitting the flag.
+        if (!IsDefaultAgentMode(mode))
+        {
+            AppendFlag(args, "--mode", mode);
+        }
+
+        if (endlessRetries)
+        {
+            // Hidden CLI flag: resume retriable transport failures instead of ending the turn.
+            // The caller bounds it with an idle watchdog.
+            args.Add("--endless-retries");
+        }
+
+        args.Add("acp");
+        return args;
+    }
+
+    private static bool IsDefaultAgentMode(string? mode)
+    {
+        var trimmed = mode?.Trim() ?? "";
+        return trimmed.Length == 0
+               || trimmed.Equals("agent", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AppendFlag(List<string> args, string flag, string? value)
+    {
+        var trimmed = value?.Trim() ?? "";
+        if (trimmed.Length == 0)
+        {
+            return;
+        }
+
+        args.Add(flag);
+        args.Add(trimmed);
+    }
+
+    private static string QuoteCmd(string value)
+    {
+        if (value.IndexOfAny([' ', '"', '&', '|', '^', '<', '>']) < 0)
+        {
+            return value;
+        }
+
+        return "\"" + value.Replace("\"", "") + "\"";
+    }
+
     public static IEnumerable<string> WellKnownPaths(string agentPath)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -70,9 +123,16 @@ internal static class AgentProcess
         yield return Path.Combine(cursorAgent, agentPath + ".exe");
     }
 
-    public static Process Start(string agentPath, string workingDirectory, string apiKey, ILogger logger)
+    public static Process Start(
+        string agentPath,
+        string workingDirectory,
+        string apiKey,
+        ILogger logger,
+        string? model = null,
+        string? mode = null,
+        bool endlessRetries = false)
     {
-        var start = CreateStartInfo(agentPath, workingDirectory, apiKey);
+        var start = CreateStartInfo(agentPath, workingDirectory, apiKey, model, mode, endlessRetries);
         Process process;
         try
         {
@@ -89,7 +149,13 @@ internal static class AgentProcess
         return process;
     }
 
-    internal static ProcessStartInfo CreateStartInfo(string agentPath, string workingDirectory, string apiKey)
+    internal static ProcessStartInfo CreateStartInfo(
+        string agentPath,
+        string workingDirectory,
+        string apiKey,
+        string? model = null,
+        string? mode = null,
+        bool endlessRetries = false)
     {
         var utf8 = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         var start = new ProcessStartInfo
@@ -105,15 +171,22 @@ internal static class AgentProcess
             StandardErrorEncoding = utf8
         };
 
+        var args = BuildAcpArguments(model, mode, endlessRetries);
         if (NeedsCmdWrapper(agentPath))
         {
             start.FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
-            start.Arguments = "/d /s /c \"" + agentPath.Replace("\"", "") + "\" acp";
+            // cmd /s strips the first and last quote of the /c payload, so wrap the
+            // whole command: ""C:\path\agent.cmd" --model auto acp"
+            var quotedPath = "\"" + agentPath.Replace("\"", "") + "\"";
+            start.Arguments = "/d /s /c \"" + quotedPath + " " + string.Join(' ', args.Select(QuoteCmd)) + "\"";
         }
         else
         {
             start.FileName = agentPath;
-            start.ArgumentList.Add("acp");
+            foreach (var arg in args)
+            {
+                start.ArgumentList.Add(arg);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(apiKey))

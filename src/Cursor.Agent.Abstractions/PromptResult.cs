@@ -16,4 +16,10 @@ public sealed record PromptResult(
 
     public static PromptResult WasBusy() =>
         new(false, "", "Agent is busy with another prompt.", Busy: true);
+
+    /// <summary>
+    /// Watchdog stop: unlike <see cref="WasCancelled"/> this was not asked for by the user,
+    /// so it is reported as a failure and keeps whatever text arrived before the silence.
+    /// </summary>
+    public static PromptResult TimedOut(string text, string error) => new(false, text, error);
 }

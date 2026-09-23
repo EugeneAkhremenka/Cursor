@@ -44,4 +44,17 @@ public sealed class ActivityTranscriptTests
         var text = log.Render("⏳ Работаю…");
         Assert.Equal("⏳ Работаю…", text);
     }
+
+    [Fact]
+    public void Render_ShowsGeneratedImage()
+    {
+        var log = new ActivityTranscript();
+        log.Add(new AgentActivityEvent(AgentActivityKind.Image, "генерация: logo", Id: "img-1", Status: "in_progress"));
+        log.Add(new AgentActivityEvent(AgentActivityKind.Image, Path.Combine("repo", "assets", "logo.png"), Id: "img-1", Status: "completed"));
+
+        var text = log.Render("⏳ Работаю…");
+
+        Assert.Contains("✅ картинка logo.png", text);
+        Assert.DoesNotContain("🔧", text);
+    }
 }

@@ -4,4 +4,6 @@ public sealed record AgentSessionStatus(
     string? SessionId,
     string WorkingDirectory,
     AgentActivity Activity,
-    bool HasSession);
+    bool HasSession,
+    string Model = "",
+    string Mode = "");

@@ -40,8 +40,30 @@ public sealed class TelegramTextTests
     }
 
     [Fact]
-    public void Help_MentionsSend()
+    public void Help_MentionsSendAndButtons()
     {
         Assert.Contains("/send", TelegramText.Help());
+        Assert.Contains("меню", TelegramText.Help());
+        Assert.Contains("telegram-inbox", TelegramText.Help());
+        Assert.Contains("/chats", TelegramText.Help());
+        Assert.Contains("/continue", TelegramText.Help());
+    }
+
+    [Fact]
+    public void FormatPromptResult_Failure_KeepsPartialText()
+    {
+        var text = TelegramText.FormatPromptResult(
+            new PromptResultEnvelope(false, "успел написать", "Агент молчал 5 мин — ход прерван.", false, false));
+
+        Assert.Contains("Ошибка: Агент молчал 5 мин", text);
+        Assert.Contains("успел написать", text);
+    }
+
+    [Fact]
+    public void FormatStatus_ShowsModelAndMode()
+    {
+        var text = TelegramText.FormatStatus(@"D:\repo", "s1", "Idle", true, "composer-2.5", "plan");
+        Assert.Contains("model: composer-2.5", text);
+        Assert.Contains("mode: plan", text);
     }
 }

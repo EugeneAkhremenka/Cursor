@@ -15,6 +15,30 @@ public sealed class CursorWorkspaceCatalogTests
     }
 
     [Fact]
+    public void TryFolderUriToPath_DecodesPercentEncodedDrive()
+    {
+        var root = Directory.CreateTempSubdirectory().FullName;
+        var full = Path.GetFullPath(root);
+        if (full.Length < 3 || full[1] != ':')
+        {
+            return;
+        }
+
+        var rest = full[2..].Replace('\\', '/');
+        var uri = $"file:///{char.ToLowerInvariant(full[0])}%3A{rest}";
+        Assert.True(CursorWorkspaceCatalog.TryFolderUriToPath(uri, out var path));
+        Assert.True(PathsEqual(path, full));
+    }
+
+    [Fact]
+    public void NormalizeLocalPath_StripsLeadingSlashBeforeDrive()
+    {
+        Assert.Equal(
+            Path.Combine("d:", "cursor", "tg"),
+            CursorWorkspaceCatalog.NormalizeLocalPath("/d:/cursor/tg"));
+    }
+
+    [Fact]
     public void Discover_ReadsStorageAndWorkspaceJson()
     {
         var userDir = Directory.CreateTempSubdirectory().FullName;

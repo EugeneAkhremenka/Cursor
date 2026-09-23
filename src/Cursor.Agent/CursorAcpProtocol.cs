@@ -6,9 +6,11 @@ namespace Cursor.Agent;
 
 internal static class CursorAcpProtocol
 {
-    public static async Task HandshakeAsync(AcpJsonRpcClient rpc, CancellationToken cancellationToken)
+    public static async Task<AcpPromptCapabilities> HandshakeAsync(
+        AcpJsonRpcClient rpc,
+        CancellationToken cancellationToken)
     {
-        await rpc.SendAsync(
+        var initialized = await rpc.SendAsync(
             "initialize",
             new
             {
@@ -33,6 +35,32 @@ internal static class CursorAcpProtocol
         {
             // Some CLI builds treat env/API-key auth as already signed in.
         }
+
+        return ReadPromptCapabilities(initialized);
+    }
+
+    /// <summary>
+    /// Reads prompt capabilities from both ACP v1 (<c>agentCapabilities.promptCapabilities.image</c>)
+    /// and v2 (presence of <c>capabilities.session.prompt.image</c>). Absent = assume supported,
+    /// since older CLI builds answer <c>initialize</c> without advertising anything.
+    /// </summary>
+    internal static AcpPromptCapabilities ReadPromptCapabilities(JsonNode? initializeResult)
+    {
+        if (initializeResult?["agentCapabilities"]?["promptCapabilities"] is JsonNode v1)
+        {
+            return new AcpPromptCapabilities(
+                v1["image"]?.GetValue<bool>() ?? true,
+                v1["embeddedContext"]?.GetValue<bool>() ?? true);
+        }
+
+        if (initializeResult?["capabilities"]?["session"]?["prompt"] is JsonObject v2)
+        {
+            return new AcpPromptCapabilities(
+                v2.ContainsKey("image"),
+                v2.ContainsKey("embeddedContext"));
+        }
+
+        return AcpPromptCapabilities.Unknown;
     }
 
     public static async Task<string> NewSessionAsync(
@@ -54,15 +82,58 @@ internal static class CursorAcpProtocol
         return sessionId;
     }
 
-    public static Task<JsonNode?> HandleIncomingRequestAsync(
+    public static object[] ToPromptBlocks(IReadOnlyList<PromptPart> parts)
+    {
+        ArgumentNullException.ThrowIfNull(parts);
+        var blocks = new List<object>(parts.Count);
+        foreach (var part in parts)
+        {
+            switch (part.Kind)
+            {
+                case PromptPartKind.Text:
+                    if (string.IsNullOrWhiteSpace(part.Text))
+                    {
+                        continue;
+                    }
+
+                    blocks.Add(new { type = "text", text = part.Text });
+                    break;
+                case PromptPartKind.Image:
+                    if (string.IsNullOrWhiteSpace(part.DataBase64) || string.IsNullOrWhiteSpace(part.MimeType))
+                    {
+                        throw new ArgumentException("Image prompt part needs mimeType and data.");
+                    }
+
+                    blocks.Add(string.IsNullOrWhiteSpace(part.Uri)
+                        ? new { type = "image", mimeType = part.MimeType, data = part.DataBase64 }
+                        : new { type = "image", mimeType = part.MimeType, data = part.DataBase64, uri = part.Uri });
+                    break;
+                case PromptPartKind.ResourceLink:
+                    if (string.IsNullOrWhiteSpace(part.Uri) || string.IsNullOrWhiteSpace(part.Name))
+                    {
+                        throw new ArgumentException("Resource link needs uri and name.");
+                    }
+
+                    blocks.Add(string.IsNullOrWhiteSpace(part.MimeType)
+                        ? new { type = "resource_link", uri = part.Uri, name = part.Name }
+                        : new { type = "resource_link", uri = part.Uri, name = part.Name, mimeType = part.MimeType });
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(parts), part.Kind, "Unknown prompt part.");
+            }
+        }
+
+        return blocks.ToArray();
+    }
+
+    public static async Task<JsonNode?> HandleIncomingRequestAsync(
         string method,
         JsonNode? @params,
         string permissionMode,
+        AcpClientHooks? hooks,
         ILogger? logger,
         CancellationToken cancellationToken)
     {
-        _ = @params;
-        _ = cancellationToken;
         logger ??= NullLogger.Instance;
 
         switch (method)
@@ -74,27 +145,136 @@ internal static class CursorAcpProtocol
                     "allow-once" => "allow-once",
                     _ => "allow-always"
                 };
-                return Task.FromResult<JsonNode?>(Serialize(new
+                return Serialize(new
                 {
                     outcome = new { outcome = "selected", optionId = option }
-                }));
+                });
 
             case "cursor/ask_question":
-                return Task.FromResult<JsonNode?>(Serialize(new
+                return Serialize(new
                 {
                     outcome = new { outcome = "skipped", reason = "no interactive UI" }
-                }));
+                });
 
             case "cursor/create_plan":
-                return Task.FromResult<JsonNode?>(Serialize(new
+                return Serialize(new
                 {
                     outcome = new { outcome = "accepted" }
-                }));
+                });
+
+            case "cursor/generate_image":
+                return await GenerateImageAsync(@params, hooks, logger, cancellationToken)
+                    .ConfigureAwait(false);
 
             default:
                 logger.LogWarning("Unhandled ACP request {Method}; returning empty result", method);
-                return Task.FromResult<JsonNode?>(new JsonObject());
+                return new JsonObject();
         }
+    }
+
+    private static async Task<JsonNode?> GenerateImageAsync(
+        JsonNode? @params,
+        AcpClientHooks? hooks,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        var description = TryString(@params?["description"]) ?? "";
+        var requested = TryString(@params?["filePath"]);
+        var toolCallId = TryString(@params?["toolCallId"]);
+        var references = ReadStringArray(@params?["referenceImagePaths"]);
+        var cwd = hooks?.WorkingDirectory ?? "";
+
+        if (hooks?.Images is null)
+        {
+            return Rejected("image generator is not configured");
+        }
+
+        if (string.IsNullOrWhiteSpace(cwd) || !Directory.Exists(cwd))
+        {
+            return Rejected("working directory is not set");
+        }
+
+        if (string.IsNullOrWhiteSpace(description) && string.IsNullOrWhiteSpace(requested))
+        {
+            return Rejected("missing image description");
+        }
+
+        var dest = GeneratedImagePath.Resolve(cwd, requested, description);
+        var label = string.IsNullOrWhiteSpace(description)
+            ? Path.GetFileName(dest)
+            : Truncate(description, 80);
+        ReportImage(hooks, toolCallId, "in_progress", "генерация: " + label);
+
+        try
+        {
+            if (!GeneratedImagePath.HasContent(dest))
+            {
+                dest = await hooks.Images
+                    .GenerateAsync(description, dest, references, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (!GeneratedImagePath.HasContent(dest))
+            {
+                GeneratedImagePath.DeleteIfIncomplete(dest);
+                return Rejected("generator did not write an image");
+            }
+
+            ReportImage(hooks, toolCallId, "completed", dest);
+            logger.LogInformation("Generated image {Path}", dest);
+            return Serialize(new
+            {
+                outcome = new { outcome = "generated", filePath = dest }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            GeneratedImagePath.DeleteIfIncomplete(dest);
+            return Serialize(new { outcome = new { outcome = "cancelled" } });
+        }
+        catch (Exception ex)
+        {
+            GeneratedImagePath.DeleteIfIncomplete(dest);
+            logger.LogWarning(ex, "cursor/generate_image failed");
+            ReportImage(hooks, toolCallId, "failed", ex.Message);
+            return Rejected(ex.Message);
+        }
+    }
+
+    private static void ReportImage(
+        AcpClientHooks hooks,
+        string? toolCallId,
+        string status,
+        string text)
+    {
+        hooks.Progress?.Report(new AgentActivityEvent(
+            AgentActivityKind.Image,
+            text,
+            Id: toolCallId,
+            Status: status));
+    }
+
+    private static JsonNode? Rejected(string reason) =>
+        Serialize(new { outcome = new { outcome = "rejected", reason } });
+
+    private static IReadOnlyList<string> ReadStringArray(JsonNode? node)
+    {
+        if (node is not JsonArray array || array.Count == 0)
+        {
+            return [];
+        }
+
+        var items = new List<string>(array.Count);
+        foreach (var item in array)
+        {
+            var value = TryString(item);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                items.Add(value);
+            }
+        }
+
+        return items;
     }
 
     public static string? ReadAssistantChunk(AcpNotification notification)

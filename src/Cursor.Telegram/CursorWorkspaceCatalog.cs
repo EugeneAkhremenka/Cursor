@@ -30,15 +30,46 @@ internal static class CursorWorkspaceCatalog
     internal static bool TryFolderUriToPath(string? uri, out string path)
     {
         path = "";
-        if (string.IsNullOrWhiteSpace(uri)
-            || !Uri.TryCreate(uri, UriKind.Absolute, out var parsed)
-            || !parsed.IsFile)
+        if (string.IsNullOrWhiteSpace(uri))
         {
             return false;
         }
 
-        path = Path.GetFullPath(Uri.UnescapeDataString(parsed.LocalPath));
+        var raw = uri.Trim();
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var parsed) || !parsed.IsFile)
+        {
+            var unescaped = Uri.UnescapeDataString(raw);
+            if (!Uri.TryCreate(unescaped, UriKind.Absolute, out parsed) || !parsed.IsFile)
+            {
+                return false;
+            }
+        }
+
+        try
+        {
+            path = Path.GetFullPath(NormalizeLocalPath(parsed.LocalPath));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
         return Directory.Exists(path);
+    }
+
+    internal static string NormalizeLocalPath(string localPath)
+    {
+        var value = Uri.UnescapeDataString(localPath);
+        // file:///d%3A/repo → LocalPath "/d:/repo" on Windows.
+        if (value.Length >= 3
+            && (value[0] == '/' || value[0] == '\\')
+            && char.IsAsciiLetter(value[1])
+            && value[2] == ':')
+        {
+            value = value[1..];
+        }
+
+        return value.Replace('/', Path.DirectorySeparatorChar);
     }
 
     private static void AddFromStorage(string storagePath, List<string> found, HashSet<string> seen)
